@@ -623,6 +623,51 @@ def create_from_images(tfrecord_dir, image_dir, shuffle):
 
 #----------------------------------------------------------------------------
 
+def create_from_images_labeled(tfrecord_dir, image_dir, shuffle):
+    print('Loading labeled images from "%s"' % image_dir)
+
+    image_categories = sorted(glob.glob(os.path.join(image_dir, '*')))
+    if len(image_categories) == 0:
+        error('No input images found')
+
+    image_filenames, labels = [], []
+    for c, image_category in enumerate(image_categories):
+        print('Loading images from "%s"' % image_category)
+        category_filenames = sorted(glob.glob(os.path.join(image_category, '*')))
+        image_filenames += category_filenames
+        labels += [c]*len(category_filenames)
+
+    labels = np.array(labels)
+    onehot = np.zeros((labels.size, np.max(labels) + 1), dtype=np.float32)
+    onehot[np.arange(labels.size), labels] = 1.0
+
+    # image_filenames = sorted(glob.glob(os.path.join(image_dir, '*')))
+    # if len(image_filenames) == 0:
+    #     error('No input images found')
+        
+    img = np.asarray(PIL.Image.open(image_filenames[0]))
+    resolution = img.shape[0]
+    channels = img.shape[2] if img.ndim == 3 else 1
+    if img.shape[1] != resolution:
+        error('Input images must have the same width and height')
+    if resolution != 2 ** int(np.floor(np.log2(resolution))):
+        error('Input image resolution must be a power-of-two')
+    if channels not in [1, 3]:
+        error('Input images must be stored as RGB or grayscale')
+    
+    with TFRecordExporter(tfrecord_dir, len(image_filenames)) as tfr:
+        order = tfr.choose_shuffled_order() if shuffle else np.arange(len(image_filenames))
+        for idx in range(order.size):
+            img = np.asarray(PIL.Image.open(image_filenames[order[idx]]))
+            if channels == 1:
+                img = img[np.newaxis, :, :] # HW => CHW
+            else:
+                img = img.transpose(2, 0, 1) # HWC => CHW
+            tfr.add_image(img)
+        tfr.add_labels(onehot[order])
+
+#----------------------------------------------------------------------------
+
 def create_from_hdf5(tfrecord_dir, hdf5_filename, shuffle):
     print('Loading HDF5 archive from "%s"' % hdf5_filename)
     import h5py # conda install h5py
@@ -716,6 +761,12 @@ def execute_cmdline(argv):
     p.add_argument(     '--num_tasks',      help='Number of concurrent processing tasks (default: 100)', type=int, default=100)
 
     p = add_command(    'create_from_images', 'Create dataset from a directory full of images.',
+                                            'create_from_images datasets/mydataset myimagedir')
+    p.add_argument(     'tfrecord_dir',     help='New dataset directory to be created')
+    p.add_argument(     'image_dir',        help='Directory containing the images')
+    p.add_argument(     '--shuffle',        help='Randomize image order (default: 1)', type=int, default=1)
+
+    p = add_command(    'create_from_images_labeled', 'Create dataset from a directory full of images in labeled subfolders.',
                                             'create_from_images datasets/mydataset myimagedir')
     p.add_argument(     'tfrecord_dir',     help='New dataset directory to be created')
     p.add_argument(     'image_dir',        help='Directory containing the images')
