@@ -627,6 +627,7 @@ def create_from_images_labeled(tfrecord_dir, image_dir, shuffle):
     print('Loading labeled images from "%s"' % image_dir)
 
     image_categories = sorted(glob.glob(os.path.join(image_dir, '*')))
+    print("image categories:", image_categories)
     if len(image_categories) == 0:
         error('No input images found')
 

@@ -157,7 +157,7 @@ def train_progressive_gan(
             print('Loading networks from "%s"...' % network_pkl)
             G, D, Gs = misc.load_pkl(network_pkl)
         else:
-            print('Constructing networks...')
+            print('Constructing networks... label size=%d' % training_set.label_size)
             G = tfutil.Network('G', num_channels=training_set.shape[0], resolution=training_set.shape[1], label_size=training_set.label_size, **config.G)
             D = tfutil.Network('D', num_channels=training_set.shape[0], resolution=training_set.shape[1], label_size=training_set.label_size, **config.D)
             Gs = G.clone('Gs')
