@@ -1,0 +1,7 @@
+name: ProgGAN
+description: Progressive Growing of GANs
+license: Creative Commons Attribution-NonCommercial 4.0 International
+base: python3.5
+entrypoint: python model.py
+build_steps:
+  - pip install -r requirements-pip.txt
