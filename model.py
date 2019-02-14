@@ -21,10 +21,9 @@ def setup(alpha=0.5):
     return Gs
 
 
-@pgan.command('convert', inputs={'image': 'image'}, outputs={'output': 'image'})
+@pgan.command('convert', inputs={'z': 'vector'}, outputs={'output': 'image'})
 def convert(Gs, inp):
-    latents = np.random.RandomState(1000).randn(1000, *Gs.input_shapes[0][1:]) # 1000 random latents
-    latents = latents[[477]]
+    latents = np.array(inp['z']).reshape((1, 512))  # np.random.RandomState(1000).randn(1, *Gs.input_shapes[0][1:])
     labels = np.zeros([latents.shape[0]] + Gs.input_shapes[1][1:])
     images = Gs.run(latents, labels)
     images = np.clip(np.rint((images + 1.0) / 2.0 * 255.0), 0.0, 255.0).astype(np.uint8) # [-1,1] => [0,255]
