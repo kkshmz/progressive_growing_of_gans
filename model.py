@@ -14,7 +14,7 @@ def setup(alpha=0.5):
     global Gs
     tf.InteractiveSession()
     batch_size = 8
-    model = 'network-final.pkl'
+    model = 'network-snapshot-itpgan.pkl'
     print("open model %s" % model)
     with open(model, 'rb') as file:
         G, D, Gs = pickle.load(file)
