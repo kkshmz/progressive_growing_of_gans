@@ -149,7 +149,7 @@ def train_progressive_gan(
 
     maintenance_start_time = time.time()
     training_set = dataset.load_dataset(data_dir=config.data_dir, verbose=True, **config.dataset)
-
+    print(training_set)
     # Construct networks.
     with tf.device('/gpu:0'):
         if resume_run_id is not None:
@@ -282,6 +282,7 @@ if __name__ == "__main__":
     os.environ.update(config.env)
     tfutil.init_tf(config.tf_config)
     print('Running %s()...' % config.train['func'])
+    print(training_set)
     tfutil.call_func_by_name(**config.train)
     print('Exiting...')
 
