@@ -14,11 +14,12 @@ import six.moves.queue as Queue
 import traceback
 import numpy as np
 import tensorflow as tf
-import PIL.Image
+from PIL import Image, ImageFile
+import cv2
 
 import tfutil
 import dataset
-
+ImageFile.LOAD_TRUNCATED_IMAGES = True
 #----------------------------------------------------------------------------
 
 def error(msg):
@@ -75,8 +76,11 @@ class TFRecordExporter:
         assert img.shape == self.shape
         for lod, tfr_writer in enumerate(self.tfr_writers):
             if lod:
-                img = img.astype(np.float32)
-                img = (img[:, 0::2, 0::2] + img[:, 0::2, 1::2] + img[:, 1::2, 0::2] + img[:, 1::2, 1::2]) * 0.25
+                try:
+                    img = img.astype(np.float32)
+                    img = (img[:, 0::2, 0::2] + img[:, 0::2, 1::2] + img[:, 1::2, 0::2] + img[:, 1::2, 1::2]) * 0.25
+                except:
+                    continue
             quant = np.rint(img).clip(0, 255).astype(np.uint8)
             ex = tf.train.Example(features=tf.train.Features(feature={
                 'shape': tf.train.Feature(int64_list=tf.train.Int64List(value=quant.shape)),
@@ -230,9 +234,9 @@ def extract(tfrecord_dir, output_dir):
         except tf.errors.OutOfRangeError:
             break
         if images.shape[1] == 1:
-            img = PIL.Image.fromarray(images[0][0], 'L')
+            img = Image.fromarray(images[0][0], 'L')
         else:
-            img = PIL.Image.fromarray(images[0].transpose(1, 2, 0), 'RGB')
+            img = Image.fromarray(images[0].transpose(1, 2, 0), 'RGB')
         img.save(os.path.join(output_dir, 'img%08d.png' % idx))
         idx += 1
     print('Extracted %d images.' % idx)
@@ -417,11 +421,11 @@ def create_lsun(tfrecord_dir, lmdb_dir, resolution=256, max_images=None):
                             raise IOError('cv2.imdecode failed')
                         img = img[:, :, ::-1] # BGR => RGB
                     except IOError:
-                        img = np.asarray(PIL.Image.open(io.BytesIO(value)))
+                        img = np.asarray(Image.open(io.BytesIO(value)))
                     crop = np.min(img.shape[:2])
                     img = img[(img.shape[0] - crop) // 2 : (img.shape[0] + crop) // 2, (img.shape[1] - crop) // 2 : (img.shape[1] + crop) // 2]
-                    img = PIL.Image.fromarray(img, 'RGB')
-                    img = img.resize((resolution, resolution), PIL.Image.ANTIALIAS)
+                    img = Image.fromarray(img, 'RGB')
+                    img = img.resize((resolution, resolution), Image.ANTIALIAS)
                     img = np.asarray(img)
                     img = img.transpose(2, 0, 1) # HWC => CHW
                     tfr.add_image(img)
@@ -443,7 +447,8 @@ def create_celeba(tfrecord_dir, celeba_dir, cx=89, cy=121):
     with TFRecordExporter(tfrecord_dir, len(image_filenames)) as tfr:
         order = tfr.choose_shuffled_order()
         for idx in range(order.size):
-            img = np.asarray(PIL.Image.open(image_filenames[order[idx]]))
+            img = np.asarray(cv2.imread(image_filenames[order[idx]]))
+            #img = np.asarray(Image.open(image_filenames[order[idx]]))
             assert img.shape == (218, 178, 3)
             img = img[cy - 64 : cy + 64, cx - 64 : cx + 64]
             img = img.transpose(2, 0, 1) # HWC => CHW
@@ -486,7 +491,7 @@ def create_celebahq(tfrecord_dir, celeba_dir, delta_dir, num_threads=4, num_task
         error('create_celebahq requires pillow version 3.1.1') # conda install pillow=3.1.1
         
     # Must use libjpeg version 8d for everything to work correctly.
-    img = np.array(PIL.Image.open(os.path.join(celeba_dir, 'img_celeba', '000001.jpg')))
+    img = np.array(Image.open(os.path.join(celeba_dir, 'img_celeba', '000001.jpg')))
     md5 = hashlib.md5()
     md5.update(img.tobytes())
     if md5.hexdigest() != '9cad8178d6cb0196b36f7b34bc5eb6d3':
@@ -500,7 +505,7 @@ def create_celebahq(tfrecord_dir, celeba_dir, delta_dir, num_threads=4, num_task
         orig_idx = fields['orig_idx'][idx]
         orig_file = fields['orig_file'][idx]
         orig_path = os.path.join(celeba_dir, 'img_celeba', orig_file)
-        img = PIL.Image.open(orig_path)
+        img = Image.open(orig_path)
 
         # Choose oriented crop rectangle.
         lm = landmarks[orig_idx]
@@ -520,7 +525,7 @@ def create_celebahq(tfrecord_dir, celeba_dir, delta_dir, num_threads=4, num_task
         shrink = int(np.floor(0.5 / zoom))
         if shrink > 1:
             size = (int(np.round(float(img.size[0]) / shrink)), int(np.round(float(img.size[1]) / shrink)))
-            img = img.resize(size, PIL.Image.ANTIALIAS)
+            img = img.resize(size, Image.ANTIALIAS)
             quad /= shrink
             zoom *= shrink
 
@@ -535,7 +540,7 @@ def create_celebahq(tfrecord_dir, celeba_dir, delta_dir, num_threads=4, num_task
         # Simulate super-resolution.
         superres = int(np.exp2(np.ceil(np.log2(zoom))))
         if superres > 1:
-            img = img.resize((img.size[0] * superres, img.size[1] * superres), PIL.Image.ANTIALIAS)
+            img = img.resize((img.size[0] * superres, img.size[1] * superres), Image.ANTIALIAS)
             quad *= superres
             zoom /= superres
 
@@ -551,12 +556,12 @@ def create_celebahq(tfrecord_dir, celeba_dir, delta_dir, num_threads=4, num_task
             blur = 1024 * 0.02 / zoom
             img += (scipy.ndimage.gaussian_filter(img, [blur, blur, 0]) - img) * np.clip(mask * 3.0 + 1.0, 0.0, 1.0)
             img += (np.median(img, axis=(0,1)) - img) * np.clip(mask, 0.0, 1.0)
-            img = PIL.Image.fromarray(np.uint8(np.clip(np.round(img), 0, 255)), 'RGB')
+            img = Image.fromarray(np.uint8(np.clip(np.round(img), 0, 255)), 'RGB')
             quad += pad[0:2]
             
         # Transform.
-        img = img.transform((4096, 4096), PIL.Image.QUAD, (quad + 0.5).flatten(), PIL.Image.BILINEAR)
-        img = img.resize((1024, 1024), PIL.Image.ANTIALIAS)
+        img = img.transform((4096, 4096), Image.QUAD, (quad + 0.5).flatten(), Image.BILINEAR)
+        img = img.resize((1024, 1024), Image.ANTIALIAS)
         img = np.asarray(img).transpose(2, 0, 1)
         
         # Verify MD5.
@@ -601,7 +606,7 @@ def create_from_images(tfrecord_dir, image_dir, shuffle):
     if len(image_filenames) == 0:
         error('No input images found')
         
-    img = np.asarray(PIL.Image.open(image_filenames[0]))
+    img = np.asarray(Image.open(image_filenames[0]))
     resolution = img.shape[0]
     channels = img.shape[2] if img.ndim == 3 else 1
     if img.shape[1] != resolution:
@@ -614,11 +619,13 @@ def create_from_images(tfrecord_dir, image_dir, shuffle):
     with TFRecordExporter(tfrecord_dir, len(image_filenames)) as tfr:
         order = tfr.choose_shuffled_order() if shuffle else np.arange(len(image_filenames))
         for idx in range(order.size):
-            img = np.asarray(PIL.Image.open(image_filenames[order[idx]]))
+            #img = np.asarray(Image.open(image_filenames[order[idx]]))
+            img = np.asarray(cv2.imread(image_filenames[order[idx]]))
             if channels == 1:
                 img = img[np.newaxis, :, :] # HW => CHW
             else:
                 img = img.transpose(2, 0, 1) # HWC => CHW
+
             tfr.add_image(img)
 
 #----------------------------------------------------------------------------
@@ -646,7 +653,7 @@ def create_from_images_labeled(tfrecord_dir, image_dir, shuffle):
     # if len(image_filenames) == 0:
     #     error('No input images found')
         
-    img = np.asarray(PIL.Image.open(image_filenames[0]))
+    img = np.asarray(Image.open(image_filenames[0]))
     resolution = img.shape[0]
     channels = img.shape[2] if img.ndim == 3 else 1
     if img.shape[1] != resolution:
@@ -659,7 +666,8 @@ def create_from_images_labeled(tfrecord_dir, image_dir, shuffle):
     with TFRecordExporter(tfrecord_dir, len(image_filenames)) as tfr:
         order = tfr.choose_shuffled_order() if shuffle else np.arange(len(image_filenames))
         for idx in range(order.size):
-            img = np.asarray(PIL.Image.open(image_filenames[order[idx]]))
+            #img = np.asarray(Image.open(image_filenames[order[idx]]))
+            img = np.asarray(cv2.imread(image_filenames[order[idx]]))
             if channels == 1:
                 img = img[np.newaxis, :, :] # HW => CHW
             else:
